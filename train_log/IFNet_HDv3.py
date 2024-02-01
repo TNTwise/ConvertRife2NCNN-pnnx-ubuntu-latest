@@ -70,13 +70,18 @@ class IFBlock(nn.Module):
 class IFNet(nn.Module):
     def __init__(self):
         super(IFNet, self).__init__()
-        self.block0 = IFBlock(7+8, c=192)
-        self.block1 = IFBlock(8+4+8, c=128)
-        self.block2 = IFBlock(8+4+8, c=96)
-        self.block3 = IFBlock(8+4+8, c=64)
+        self.block0 = IFBlock(7+16, c=192)
+        self.block1 = IFBlock(8+4+16, c=128)
+        self.block2 = IFBlock(8+4+16, c=96)
+        self.block3 = IFBlock(8+4+16, c=64)
         self.encode = nn.Sequential(
-            nn.Conv2d(3, 16, 3, 2, 1),
-            nn.ConvTranspose2d(16, 4, 4, 2, 1)
+            nn.Conv2d(3, 32, 3, 2, 1),
+            nn.LeakyReLU(0.2, True),
+            nn.Conv2d(32, 32, 3, 1, 1),
+            nn.LeakyReLU(0.2, True),
+            nn.Conv2d(32, 32, 3, 1, 1),
+            nn.LeakyReLU(0.2, True),
+            nn.ConvTranspose2d(32, 8, 4, 2, 1)
         )
         # self.contextnet = Contextnet()
         # self.unet = Unet()
