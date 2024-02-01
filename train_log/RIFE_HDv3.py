@@ -18,7 +18,7 @@ class Model:
         self.device()
         self.optimG = AdamW(self.flownet.parameters(), lr=1e-6, weight_decay=1e-4)
         self.epe = EPE()
-        self.version = 4.8
+        self.version = 3.9
         # self.vgg = VGGPerceptualLoss().to(device)
         self.sobel = SOBEL()
         if local_rank != -1:

@@ -70,23 +70,14 @@ class IFBlock(nn.Module):
 class IFNet(nn.Module):
     def __init__(self):
         super(IFNet, self).__init__()
-        self.block0 = IFBlock(7+8, c=128)
-        self.block1 = IFBlock(8+4+8, c=96)
-        self.block2 = IFBlock(8+4+8, c=64)
-        self.block3 = IFBlock(8+4+8, c=48)
-        self.encode = nn.Sequential(
-            nn.Conv2d(3, 32, 3, 2, 1),
-            nn.LeakyReLU(0.2, True),
-            nn.Conv2d(32, 32, 3, 1, 1),
-            nn.LeakyReLU(0.2, True),
-            nn.Conv2d(32, 32, 3, 1, 1),
-            nn.LeakyReLU(0.2, True),
-            nn.ConvTranspose2d(32, 4, 4, 2, 1)
-        )
+        self.block0 = IFBlock(7, c=192)
+        self.block1 = IFBlock(8+4, c=128)
+        self.block2 = IFBlock(8+4, c=96)
+        self.block3 = IFBlock(8+4, c=64)
         # self.contextnet = Contextnet()
         # self.unet = Unet()
 
-    def forward(self, x, timestep=0.5, scale_list=[8, 4, 2, 1], training=False, fastmode=True, ensemble=False):
+    def forward( self, x, timestep=0.5, scale_list=[8, 4, 2, 1], training=False, fastmode=True, ensemble=False):
         if training == False:
             channel = x.shape[1] // 2
             img0 = x[:, :channel]
@@ -95,8 +86,6 @@ class IFNet(nn.Module):
             timestep = (x[:, :1].clone() * 0 + 1) * timestep
         else:
             timestep = timestep.repeat(1, 1, img0.shape[2], img0.shape[3])
-        f0 = self.encode(img0[:, :3])
-        f1 = self.encode(img1[:, :3])
         flow_list = []
         merged = []
         mask_list = []
@@ -108,29 +97,26 @@ class IFNet(nn.Module):
         block = [self.block0, self.block1, self.block2, self.block3]
         for i in range(4):
             if flow is None:
-                flow, mask = block[i](torch.cat((img0[:, :3], img1[:, :3], f0, f1, timestep), 1), None, scale=scale_list[i])
+                flow, mask = block[i](torch.cat((img0[:, :3], img1[:, :3], timestep), 1), None, scale=scale_list[i])
                 if ensemble:
-                    f_, m_ = block[i](torch.cat((img1[:, :3], img0[:, :3], f1, f0, 1-timestep), 1), None, scale=scale_list[i])
-                    flow = (flow + torch.cat((f_[:, 2:4], f_[:, :2]), 1)) / 2
-                    mask = (mask + (-m_)) / 2
+                    f1, m1 = block[i](torch.cat((img1[:, :3], img0[:, :3], 1-timestep), 1), None, scale=scale_list[i])
+                    flow = (flow + torch.cat((f1[:, 2:4], f1[:, :2]), 1)) / 2
+                    mask = (mask + (-m1)) / 2
             else:
-                wf0 = warp(f0, flow[:, :2])
-                wf1 = warp(f1, flow[:, 2:4])
-                fd, m0 = block[i](torch.cat((warped_img0[:, :3], warped_img1[:, :3], wf0, wf1, timestep, mask), 1), flow, scale=scale_list[i])
+                f0, m0 = block[i](torch.cat((warped_img0[:, :3], warped_img1[:, :3], timestep, mask), 1), flow, scale=scale_list[i])
                 if ensemble:
-                    f_, m_ = block[i](torch.cat((warped_img1[:, :3], warped_img0[:, :3], wf1, wf0, 1-timestep, -mask), 1), torch.cat((flow[:, 2:4], flow[:, :2]), 1), scale=scale_list[i])
-                    fd = (fd + torch.cat((f_[:, 2:4], f_[:, :2]), 1)) / 2
-                    mask = (m0 + (-m_)) / 2
-                else:
-                    mask = m0
-                flow = flow + fd
+            	    f1, m1 = block[i](torch.cat((warped_img1[:, :3], warped_img0[:, :3], 1-timestep, -mask), 1), torch.cat((flow[:, 2:4], flow[:, :2]), 1), scale=scale_list[i])
+            	    f0 = (f0 + torch.cat((f1[:, 2:4], f1[:, :2]), 1)) / 2
+            	    m0 = (m0 + (-m1)) / 2
+                flow = flow + f0
+                mask = mask + m0
             mask_list.append(mask)
             flow_list.append(flow)
             warped_img0 = warp(img0, flow[:, :2])
             warped_img1 = warp(img1, flow[:, 2:4])
             merged.append((warped_img0, warped_img1))
-        mask = torch.sigmoid(mask)
-        merged[3] = (warped_img0 * mask + warped_img1 * (1 - mask))
+        mask_list[3] = torch.sigmoid(mask_list[3])
+        merged[3] = merged[3][0] * mask_list[3] + merged[3][1] * (1 - mask_list[3])
         if not fastmode:
             print('contextnet is removed')
             '''
